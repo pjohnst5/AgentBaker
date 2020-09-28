@@ -3707,7 +3707,7 @@ write_files:
     address = "127.0.0.1:10257"
     {{if HasPrivateAzureRegistryServer}}
     [plugins.cri.registry.auths]
-      [plugins.cri.registry.auths."{{GetPrivateAzureRegistryServer}}""]
+      [plugins.cri.registry.auths."{{GetPrivateAzureRegistryServer}}"]
         username = {{GetParameter "servicePrincipalClientId"}}
         password = {{GetParameter "servicePrincipalClientSecret"}}
     {{end}}
