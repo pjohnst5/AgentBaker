@@ -20,7 +20,10 @@ phases:
           ASC_BASELINE_TMP=vhdbuilder/packer/asc-baseline-1.0.0-master.354.amd64.deb
           sudo dpkg -i $ASC_BASELINE_TMP
           sudo cp /opt/microsoft/asc-baseline/baselines/oms_audits.xml /opt/microsoft/asc-baseline/oms_audits.xml
-          cd /opt/
+          cd /opt/microsoft/asc-baseline
+          sudo ./ascbaseline -d .​
+          sudo ./ascremediate -d . -m all​
+          sudo ./ascbaseline -d .​| grep -B2 -A6 "FAIL"
           pwd
           ls -R
         displayName: show Directory
