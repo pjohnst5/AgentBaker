@@ -97,11 +97,11 @@ installSGXDrivers() {
 }
 
 installContainerRuntime() {
-    if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
+    
         installMoby
-    fi
     
 }
+
 
 installMoby() {
     CURRENT_VERSION=$(dockerd --version | grep "Docker version" | cut -d "," -f 1 | cut -d " " -f 3 | cut -d "+" -f 1)
@@ -118,7 +118,6 @@ installMoby() {
         apt_get_install 20 30 120 moby-engine=${MOBY_VERSION}* moby-cli=${MOBY_CLI}* --allow-downgrades || exit $ERR_MOBY_INSTALL_TIMEOUT
     fi
 }
-
 
 
 getMobyPkg() {
@@ -150,12 +149,13 @@ downloadAzureCNI() {
 }
 
 downloadContainerd() {
-    CONTAINERD_DOWNLOAD_URL="${CONTAINERD_DOWNLOAD_URL_BASE}cri-containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz"
+    # currently upstream maintains the package on a storage endpoint rather than an actual apt repo
+    CONTAINERD_DOWNLOAD_URL="https://mobyartifacts.azureedge.net/moby/moby-containerd/${CONTAINERD_VERSION}+azure/bionic/linux_amd64/moby-containerd_${CONTAINERD_VERSION}+azure-1_amd64.deb"
     mkdir -p $CONTAINERD_DOWNLOADS_DIR
-    CONTAINERD_TGZ_TMP=${CONTAINERD_DOWNLOAD_URL##*/}
-    retrycmd_get_tarball 120 5 "$CONTAINERD_DOWNLOADS_DIR/${CONTAINERD_TGZ_TMP}" ${CONTAINERD_DOWNLOAD_URL} || exit $ERR_CONTAINERD_DOWNLOAD_TIMEOUT
+    CONTAINERD_DEB_TMP=${CONTAINERD_DOWNLOAD_URL##*/}
+    retrycmd_curl_file 120 5 "$CONTAINERD_DOWNLOADS_DIR/${CONTAINERD_DEB_TMP}" ${CONTAINERD_DOWNLOAD_URL} || exit $ERR_CONTAINERD_DOWNLOAD_TIMEOUT
+    CONTAINERD_DEB_FILE="$CONTAINERD_DOWNLOADS_DIR/${CONTAINERD_DEB_TMP}"
 }
-
 
 
 
@@ -182,14 +182,6 @@ installAzureCNI() {
     tar -xzf "$CNI_DOWNLOADS_DIR/${CNI_TGZ_TMP}" -C $CNI_BIN_DIR
 }
 
-installImg() {
-    img_filepath=/usr/local/bin/img
-    retrycmd_get_executable 120 5 $img_filepath "https://acs-mirror.azureedge.net/img/img-linux-amd64-v0.5.6" ls || exit $ERR_IMG_DOWNLOAD_TIMEOUT
-}
-
-installBuildkit() {
-    buildkit_filepath=/usr/local/bin/
-}
 extractKubeBinaries() {
     K8S_VERSION=$1
     KUBE_BINARY_URL=$2
@@ -213,19 +205,18 @@ extractHyperkube() {
     mkdir -p "$path"
 
     if [[ "$CLI_TOOL" == "ctr" ]]; then    
-        extractCmd='ctr --namespace k8s.io run --rm --mount type=bind,src=$path,dst=$path,options=bind:rw ${HYPERKUBE_URL} extractTask /bin/bash -c "cp /usr/local/bin/{kubelet,kubectl} $path"'
-    else 
-        extractCmd='docker run --rm --entrypoint "" -v $path:$path ${HYPERKUBE_URL} /bin/bash -c "cp /usr/local/bin/{kubelet,kubectl} $path"'
-    fi
-
-    # Check if we can extract kubelet and kubectl directly from hyperkube's binary folder
-    if eval ${extractCmd}; then
-        mv "$path/kubelet" "/usr/local/bin/kubelet-${KUBERNETES_VERSION}"
-        mv "$path/kubectl" "/usr/local/bin/kubectl-${KUBERNETES_VERSION}"
-    else
-        if [[ "$CLI_TOOL" == "ctr" ]]; then
+        if ctr --namespace k8s.io run --rm --mount type=bind,src=$path,dst=$path,options=bind:rw ${HYPERKUBE_URL} extractTask /bin/bash -c "cp /usr/local/bin/{kubelet,kubectl} $path"; then
+            mv "$path/kubelet" "/usr/local/bin/kubelet-${KUBERNETES_VERSION}"
+            mv "$path/kubectl" "/usr/local/bin/kubectl-${KUBERNETES_VERSION}"
+        else
             ctr --namespace k8s.io run --rm --mount type=bind,src=$path,dst=$path,options=bind:rw ${HYPERKUBE_URL} extractTask /bin/bash -c "cp /hyperkube $path"
-        else 
+        fi 
+    
+    else 
+        if docker run --rm --entrypoint "" -v $path:$path ${HYPERKUBE_URL} /bin/bash -c "cp /usr/local/bin/{kubelet,kubectl} $path"; then
+            mv "$path/kubelet" "/usr/local/bin/kubelet-${KUBERNETES_VERSION}"
+            mv "$path/kubectl" "/usr/local/bin/kubectl-${KUBERNETES_VERSION}"
+        else
             docker run --rm -v $path:$path ${HYPERKUBE_URL} /bin/bash -c "cp /hyperkube $path"
         fi
     fi
@@ -243,7 +234,7 @@ installKubeletKubectlAndKubeProxy() {
             if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
                 extractHyperkube "docker"
             else
-                extractHyperkube "container"
+                extractHyperkube "containerd"
             fi
         fi
     fi
@@ -273,9 +264,9 @@ removeContainerImage() {
     CLI_TOOL=$1
     CONTAINER_IMAGE_URL=$2
     if [[ ${CLI_TOOL} == "ctr" ]]; then
-        retrycmd_if_failure 60 1 1200 ctr --namespace k8s.io image rm $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
+        ctr --namespace k8s.io image rm $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
     else
-        retrycmd_if_failure 60 1 1200 docker rm $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
+        docker image rm $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
     fi
 }
 
@@ -328,18 +319,6 @@ cleanUpContainerImages() {
     export KUBERNETES_VERSION
     bash -c cleanUpHyperkubeImages &
     bash -c cleanUpKubeProxyImages &
-    
-        export -f clearContainerdRootDir
-        clearContainerdRootDir &
-    
-}
-
-clearDockerRootDir() {
-    rm -rf /var/lib/docker 2>&1 >/dev/null
-}
-
-clearContainerdRootDir() {
-    rm -rf /var/lib/containerd 2>&1 >/dev/null
 }
 
 cleanUpGPUDrivers() {

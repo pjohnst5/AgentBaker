@@ -343,15 +343,31 @@ pullKubeComponents() {
     # v1.18.8
     # NOTE that we only keep the latest one per k8s patch version as kubelet/kubectl is decided by VHD version
     K8S_VERSIONS="
+    1.15.7-hotfix.20200326
+    1.15.10-hotfix.20200408.1
+    1.15.11-hotfix.20200824.1
     1.15.12-hotfix.20200824.1
+    1.16.9-hotfix.20200529.1
+    1.16.10-hotfix.20200824.1
+    1.16.13-hotfix.20200824.1
     1.16.15-hotfix.20200903
+    1.17.3-hotfix.20200601.1
+    1.17.7-hotfix.20200817.1
     1.17.9-hotfix.20200824.1
     1.17.11-hotfix.20200901
+    1.18.2-hotfix.20200624.1
+    1.18.4-hotfix.20200626.1
+    1.18.6-hotfix.20200723.1
     1.18.8
     1.19.0
     "
     for PATCHED_KUBERNETES_VERSION in ${K8S_VERSIONS}; do
-        if (($(echo ${PATCHED_KUBERNETES_VERSION} | cut -d"." -f2) < 17)); then
+        revVersion=$(echo ${PATCHED_KUBERNETES_VERSION} | cut -d"." -f2)
+        # Only fetch 1.18 or higher for containerd
+        if [[ ${cliTool} == "ctr" ]] && ((${revVersion} < 18)); then
+            continue 
+        fi
+        if ((${revVersion} < 17)); then
             HYPERKUBE_URL="mcr.microsoft.com/oss/kubernetes/hyperkube:v${PATCHED_KUBERNETES_VERSION}"
             # NOTE: the KUBERNETES_VERSION will be used to tag the extracted kubelet/kubectl in /usr/local/bin
             # it should match the KUBERNETES_VERSION format(just version number, e.g. 1.15.7, no prefix v)
@@ -361,7 +377,7 @@ pullKubeComponents() {
             # and put them to /usr/local/bin/kubelet-${KUBERNETES_VERSION}
             extractHyperkube ${cliTool}
             # remove hyperkube here as the one that we really need is pulled later
-            removeContainerImage $HYPERKUBE_URL
+            removeContainerImage ${cliTool} $HYPERKUBE_URL
         else
             # strip the last .1 as that is for base image patch for hyperkube
             if grep -iq hotfix <<< ${PATCHED_KUBERNETES_VERSION}; then
@@ -390,26 +406,45 @@ pullKubeComponents() {
     # NOTE that we keep multiple files per k8s patch version as kubeproxy version is decided by CCP
     PATCHED_HYPERKUBE_IMAGES="
     1.15.11-hotfix.20200529.1
+    1.15.12-hotfix.20200623.1
     1.15.12-hotfix.20200714.1
     1.16.9-hotfix.20200529.1
+    1.16.10-hotfix.20200623.1
+    1.16.10-hotfix.20200714.1
+    1.16.10-hotfix.20200817.1
     1.16.10-hotfix.20200824.1
+    1.16.13-hotfix.20200714.1
+    1.16.13-hotfix.20200817.1
+    1.16.13-hotfix.20200824.1
     1.16.15-hotfix.20200903
     1.17.3-hotfix.20200601.1
+    1.17.7-hotfix.20200624
+    1.17.7-hotfix.20200714.1
     1.17.7-hotfix.20200714.2
+    1.17.9-hotfix.20200714.1
+    1.17.9-hotfix.20200817.1
     1.17.9-hotfix.20200824.1
     1.17.11-hotfix.20200901
+    1.18.4-hotfix.20200624
     1.18.4-hotfix.20200626.1
+    1.18.6-hotfix.20200723.1
+    1.18.6
     1.18.8
     1.19.0
     "
     for KUBERNETES_VERSION in ${PATCHED_HYPERKUBE_IMAGES}; do
+        revVersion=$(echo ${PATCHED_KUBERNETES_VERSION} | cut -d"." -f2)
+        # Only fetch 1.18 or higher for containerd
+        if [[ ${cliTool} == "ctr" ]] && ((${revVersion} < 18)); then
+            continue 
+        fi
         # TODO: after CCP chart is done, change below to get hyperkube only for versions less than 1.17 only
-        if (($(echo ${KUBERNETES_VERSION} | cut -d"." -f2) < 19)); then
+        if (( ${revVersion} < 19)); then
             CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/hyperkube:v${KUBERNETES_VERSION}"
             pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
             echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
             if [[ ${cliTool} == "docker" ]]; then
-                docker run --rm --entrypoint "" ${CONTAINER_IMAGE}  /bin/sh -c "iptables --version" | grep -v nf_tables && echo "Hyperkube contains no nf_tables"
+                docker run --rm --entrypoint "" ${CONTAINER_IMAGE} /bin/sh -c "iptables --version" | grep -v nf_tables && echo "Hyperkube contains no nf_tables"
             else 
                 ctr --namespace k8s.io run --rm ${CONTAINER_IMAGE} checkTask /bin/sh -c "iptables --version" | grep -v nf_tables && echo "Hyperkube contains no nf_tables"
             fi
@@ -422,7 +457,7 @@ pullKubeComponents() {
 
         # from 1.17 onwards start using kube-proxy as well
         # strip the last .1 as that is for base image patch for hyperkube
-        if (($(echo ${KUBERNETES_VERSION} | cut -d"." -f2) >= 17)); then
+        if (( ${revVersion} >= 17)); then
             if grep -iq hotfix <<< ${KUBERNETES_VERSION}; then
             KUBERNETES_VERSION=`echo ${KUBERNETES_VERSION} | cut -d"." -f1,2,3,4`;
             else
@@ -431,9 +466,9 @@ pullKubeComponents() {
             CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/kube-proxy:v${KUBERNETES_VERSION}"
             pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
             if [[ ${cliTool} == "docker" ]]; then
-                docker run --rm --entrypoint "" ${CONTAINER_IMAGE}  /bin/sh -c "iptables --version" | grep -v nf_tables && echo "kube-proxy contains no nf_tables"
+                docker run --rm --entrypoint "" ${CONTAINER_IMAGE} /bin/sh -c "iptables --version" | grep -v nf_tables && echo "kube-proxy contains no nf_tables"
             else
-                ctr --namespace k8s.io run --rm ${CONTAINER_IMAGE} checkTask/bin/sh -c "iptables --version" | grep -v nf_tables && echo "kube-proxy contains no nf_tables"
+                ctr --namespace k8s.io run --rm ${CONTAINER_IMAGE} checkTask /bin/sh -c "iptables --version" | grep -v nf_tables && echo "kube-proxy contains no nf_tables"
             fi
             # shellcheck disable=SC2181
             if [[ $? != 0 ]]; then

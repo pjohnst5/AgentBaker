@@ -17,6 +17,7 @@ ERR_DOCKER_START_FAIL=24
 ERR_MOBY_APT_LIST_TIMEOUT=25 
 ERR_MS_GPG_KEY_DOWNLOAD_TIMEOUT=26 
 ERR_MOBY_INSTALL_TIMEOUT=27 
+ERR_CONTAINERD_INSTALL_TIMEOUT=28 
 ERR_K8S_RUNNING_TIMEOUT=30 
 ERR_K8S_DOWNLOAD_TIMEOUT=31 
 ERR_KUBECTL_NOT_FOUND=32 
@@ -139,6 +140,19 @@ retrycmd_get_executable() {
         else
             timeout 30 curl -fsSL $url -o $filepath
             chmod +x $filepath
+            sleep $wait_sleep
+        fi
+    done
+}
+retrycmd_curl_file() {
+    tar_retries=$1; wait_sleep=$2; filepath=$3; url=$4
+    echo "${tar_retries} retries"
+    for i in $(seq 1 $tar_retries); do
+        [[ -f $filepath ]] && break
+        if [ $i -eq $tar_retries ]; then
+            return 1
+        else
+            timeout 60 curl -fsSL $url -o $filepath
             sleep $wait_sleep
         fi
     done

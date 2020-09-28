@@ -16,7 +16,8 @@ ERR_DOCKER_APT_KEY_TIMEOUT=23 {{/* Timeout waiting for docker apt-key */}}
 ERR_DOCKER_START_FAIL=24 {{/* Docker could not be started by systemctl */}}
 ERR_MOBY_APT_LIST_TIMEOUT=25 {{/* Timeout waiting for moby apt sources */}}
 ERR_MS_GPG_KEY_DOWNLOAD_TIMEOUT=26 {{/* Timeout waiting for MS GPG key download */}}
-ERR_MOBY_INSTALL_TIMEOUT=27 {{/* Timeout waiting for moby install */}}
+ERR_MOBY_INSTALL_TIMEOUT=27 {{/* Timeout waiting for moby-docker install */}}
+ERR_CONTAINERD_INSTALL_TIMEOUT=28 {{/* Timeout waiting for moby-containerd install */}}
 ERR_K8S_RUNNING_TIMEOUT=30 {{/* Timeout waiting for k8s cluster to be healthy */}}
 ERR_K8S_DOWNLOAD_TIMEOUT=31 {{/* Timeout waiting for Kubernetes downloads */}}
 ERR_KUBECTL_NOT_FOUND=32 {{/* kubectl client binary not found on local disk */}}
@@ -139,6 +140,19 @@ retrycmd_get_executable() {
         else
             timeout 30 curl -fsSL $url -o $filepath
             chmod +x $filepath
+            sleep $wait_sleep
+        fi
+    done
+}
+retrycmd_curl_file() {
+    tar_retries=$1; wait_sleep=$2; filepath=$3; url=$4
+    echo "${tar_retries} retries"
+    for i in $(seq 1 $tar_retries); do
+        [[ -f $filepath ]] && break
+        if [ $i -eq $tar_retries ]; then
+            return 1
+        else
+            timeout 60 curl -fsSL $url -o $filepath
             sleep $wait_sleep
         fi
     done
