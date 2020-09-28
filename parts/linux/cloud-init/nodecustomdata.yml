@@ -168,6 +168,8 @@ write_files:
     ExecStart=
     ExecStart=/usr/bin/dockerd -H fd:// --storage-driver=overlay2 --bip={{GetParameter "dockerBridgeCidr"}}
     ExecStartPost=/sbin/iptables -P FORWARD ACCEPT
+    LimitNPROC=infinity
+    LimitCORE=infinity
     #EOF
 
 - path: /etc/docker/daemon.json

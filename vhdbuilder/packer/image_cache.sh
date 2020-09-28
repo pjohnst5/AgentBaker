@@ -1,54 +1,41 @@
 #!/bin/bash
 
 pullSystemImages() {
-    runtime=$1
-    if [[ ${runtime} == "containerd" ]]; then
+    if [[ ${CONTAINER_RUNTIME} == "containerd" ]]; then
         cliTool="ctr"
     else 
         cliTool="docker"
     fi
 
-    echo "${runtime} images pre-pulled:" >> ${VHD_LOGS_FILEPATH}
+    echo "${CONTAINER_RUNTIME} images pre-pulled:" >> ${VHD_LOGS_FILEPATH}
 
-    if [[ ${cliTool} == "docker" ]]; then
-        DASHBOARD_VERSIONS="1.10.1"
-        for DASHBOARD_VERSION in ${DASHBOARD_VERSIONS}; do
-            CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/kubernetes-dashboard:v${DASHBOARD_VERSION}"
-            pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
-            echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
-        done
-    fi
+    DASHBOARD_VERSIONS="1.10.1"
+    for DASHBOARD_VERSION in ${DASHBOARD_VERSIONS}; do
+        CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/kubernetes-dashboard:v${DASHBOARD_VERSION}"
+        pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
+        echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
+    done
+  
 
+    NEW_DASHBOARD_VERSIONS="
+    2.0.0-beta8
+    2.0.0-rc3
+    2.0.0-rc7
+    2.0.1
+    "
 
-    if [[ ${cliTool} == "docker" ]]; then
-        NEW_DASHBOARD_VERSIONS="
-        2.0.0-beta8
-        2.0.0-rc3
-        2.0.0-rc7
-        2.0.1
-        "
-    else 
-        NEW_DASHBOARD_VERSIONS="
-        2.0.1
-        "
-    fi
     for DASHBOARD_VERSION in ${NEW_DASHBOARD_VERSIONS}; do
         CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/dashboard:v${DASHBOARD_VERSION}"
         pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
         echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
     done
 
-    if [[ ${cliTool} == "docker" ]]; then
-        NEW_DASHBOARD_METRICS_SCRAPER_VERSIONS="
-        1.0.2
-        1.0.3
-        1.0.4
-        "
-    else
-        NEW_DASHBOARD_METRICS_SCRAPER_VERSIONS="
-        1.0.4
-        "
-    fi
+    NEW_DASHBOARD_METRICS_SCRAPER_VERSIONS="
+    1.0.2
+    1.0.3
+    1.0.4
+    "
+
     for DASHBOARD_VERSION in ${NEW_DASHBOARD_METRICS_SCRAPER_VERSIONS}; do
         CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/metrics-scraper:v${DASHBOARD_VERSION}"
         pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
@@ -62,34 +49,26 @@ pullSystemImages() {
         echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
     done
 
-    if [[ ${cliTool} == "docker" ]]; then
-        ADDON_RESIZER_VERSIONS="
-        1.8.5
-        1.8.4
-        1.8.1
-        1.7
-        "
-    else
-        ADDON_RESIZER_VERSIONS="
-        1.8.5
-        "
-    fi
+
+    ADDON_RESIZER_VERSIONS="
+    1.8.5
+    1.8.4
+    1.8.1
+    1.7
+    "
+
     for ADDON_RESIZER_VERSION in ${ADDON_RESIZER_VERSIONS}; do
         CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/autoscaler/addon-resizer:${ADDON_RESIZER_VERSION}"
         pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
         echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
     done
 
-    if [[ ${cliTool} == "docker" ]]; then
-        METRICS_SERVER_VERSIONS="
-        0.3.6
-        0.3.5
-        "
-    else
-        METRICS_SERVER_VERSIONS="
-        0.3.6
-        "
-    fi
+
+    METRICS_SERVER_VERSIONS="
+    0.3.6
+    0.3.5
+    "
+
     for METRICS_SERVER_VERSION in ${METRICS_SERVER_VERSIONS}; do
         CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/metrics-server:v${METRICS_SERVER_VERSION}"
         pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
@@ -115,19 +94,14 @@ pullSystemImages() {
         echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
     done
 
-    if [[ ${cliTool} == "docker" ]]; then
-        CORE_DNS_VERSIONS="
-        1.6.6
-        1.6.5
-        1.5.0
-        1.3.1
-        1.2.6
-        "
-    else
-        CORE_DNS_VERSIONS="
-        1.6.6
-        "
-    fi
+    CORE_DNS_VERSIONS="
+    1.6.6
+    1.6.5
+    1.5.0
+    1.3.1
+    1.2.6
+    "
+
     for CORE_DNS_VERSION in ${CORE_DNS_VERSIONS}; do
         CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/coredns:${CORE_DNS_VERSION}"
         pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
@@ -135,16 +109,12 @@ pullSystemImages() {
     done
 
     AZURE_CNIIMAGEBASE="mcr.microsoft.com/containernetworking"
-    if [[ ${cliTool} == "docker" ]]; then
-        AZURE_CNI_NETWORKMONITOR_VERSIONS="
-        0.0.7
-        0.0.6
-        "
-    else
-        AZURE_CNI_NETWORKMONITOR_VERSIONS="
-        0.0.7
-        "
-    fi
+
+    AZURE_CNI_NETWORKMONITOR_VERSIONS="
+    0.0.7
+    0.0.6
+    "
+
     for AZURE_CNI_NETWORKMONITOR_VERSION in ${AZURE_CNI_NETWORKMONITOR_VERSIONS}; do
         CONTAINER_IMAGE="${AZURE_CNIIMAGEBASE}/networkmonitor:v${AZURE_CNI_NETWORKMONITOR_VERSION}"
         pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
@@ -197,7 +167,11 @@ pullSystemImages() {
             echo "  - $kubeletDevicePluginPath" >> ${VHD_LOGS_FILEPATH}
 
             mkdir -p $DEST
-            docker run --rm --entrypoint "" -v $DEST:$DEST "nvidia/k8s-device-plugin:1.11" /bin/bash -c "cp /usr/bin/nvidia-device-plugin $DEST" || exit 1
+            if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+                docker run --rm --entrypoint "" -v $DEST:$DEST "nvidia/k8s-device-plugin:1.11" /bin/bash -c "cp /usr/bin/nvidia-device-plugin $DEST" || exit 1
+            else
+                ctr run --rm --mount type=bind,src=${DEST},dst=${DEST},options=bind:rw --cwd ${DEST} "docker.io/nvidia/k8s-device-plugin:1.11" plugingextract /bin/sh -c "cp /usr/bin/nvidia-device-plugin $DEST" || exit 1
+            fi
             chmod a+x $DEST/nvidia-device-plugin
             echo "  - extracted nvidia-device-plugin..." >> ${VHD_LOGS_FILEPATH}
             ls -ltr $DEST >> ${VHD_LOGS_FILEPATH}
@@ -350,6 +324,126 @@ pullSystemImages() {
     done
 }
 
+pullKubeComponents() {
+    if [[ ${CONTAINER_RUNTIME} == "containerd" ]]; then
+        cliTool="ctr"
+    else 
+        cliTool="docker"
+    fi
+
+    # kubelet and kubectl
+    # need to cover previously supported version for VMAS scale up scenario
+    # So keeping as many versions as we can - those unsupported version can be removed when we don't have enough space
+    # below are the required to support versions
+    # v1.16.13-hotfix.20200824.1
+    # v1.16.15-hotfix.20200903
+    # v1.17.9-hotfix.20200824.1
+    # v1.17.11-hotfix.20200901
+    # v1.18.6-hotfix.20200723.1
+    # v1.18.8
+    # NOTE that we only keep the latest one per k8s patch version as kubelet/kubectl is decided by VHD version
+    K8S_VERSIONS="
+    1.15.12-hotfix.20200824.1
+    1.16.15-hotfix.20200903
+    1.17.9-hotfix.20200824.1
+    1.17.11-hotfix.20200901
+    1.18.8
+    1.19.0
+    "
+    for PATCHED_KUBERNETES_VERSION in ${K8S_VERSIONS}; do
+        if (($(echo ${PATCHED_KUBERNETES_VERSION} | cut -d"." -f2) < 17)); then
+            HYPERKUBE_URL="mcr.microsoft.com/oss/kubernetes/hyperkube:v${PATCHED_KUBERNETES_VERSION}"
+            # NOTE: the KUBERNETES_VERSION will be used to tag the extracted kubelet/kubectl in /usr/local/bin
+            # it should match the KUBERNETES_VERSION format(just version number, e.g. 1.15.7, no prefix v)
+            # in installKubeletAndKubectl() executed by cse, otherwise cse will need to download the kubelet/kubectl again
+            KUBERNETES_VERSION=$(echo ${PATCHED_KUBERNETES_VERSION} | cut -d"_" -f1 | cut -d"-" -f1 | cut -d"." -f1,2,3)
+            # extractHyperkube will extract the kubelet/kubectl binary from the image: ${HYPERKUBE_URL}
+            # and put them to /usr/local/bin/kubelet-${KUBERNETES_VERSION}
+            extractHyperkube ${cliTool}
+            # remove hyperkube here as the one that we really need is pulled later
+            removeContainerImage $HYPERKUBE_URL
+        else
+            # strip the last .1 as that is for base image patch for hyperkube
+            if grep -iq hotfix <<< ${PATCHED_KUBERNETES_VERSION}; then
+            # shellcheck disable=SC2006
+            PATCHED_KUBERNETES_VERSION=`echo ${PATCHED_KUBERNETES_VERSION} | cut -d"." -f1,2,3,4`;
+            else
+            PATCHED_KUBERNETES_VERSION=`echo ${PATCHED_KUBERNETES_VERSION} | cut -d"." -f1,2,3`;
+            fi
+            KUBERNETES_VERSION=$(echo ${PATCHED_KUBERNETES_VERSION} | cut -d"_" -f1 | cut -d"-" -f1 | cut -d"." -f1,2,3)
+            extractKubeBinaries $KUBERNETES_VERSION "https://acs-mirror.azureedge.net/kubernetes/v${PATCHED_KUBERNETES_VERSION}/binaries/kubernetes-node-linux-amd64.tar.gz"
+        fi
+    done
+
+    ls -ltr /usr/local/bin/* >> ${VHD_LOGS_FILEPATH}
+
+    # pull patched hyperkube image for AKS
+    # this is used by kube-proxy and need to cover previously supported version for VMAS scale up scenario
+    # So keeping as many versions as we can - those unsupported version can be removed when we don't have enough space
+    # below are the required to support versions
+    # v1.16.13-hotfix.20200824.1
+    # v1.16.15-hotfix.20200903
+    # v1.17.9-hotfix.20200824.1
+    # v1.17.11-hotfix.20200901
+    # v1.18.6-hotfix.20200723.1
+    # v1.18.8
+    # NOTE that we keep multiple files per k8s patch version as kubeproxy version is decided by CCP
+    PATCHED_HYPERKUBE_IMAGES="
+    1.15.11-hotfix.20200529.1
+    1.15.12-hotfix.20200714.1
+    1.16.9-hotfix.20200529.1
+    1.16.10-hotfix.20200824.1
+    1.16.15-hotfix.20200903
+    1.17.3-hotfix.20200601.1
+    1.17.7-hotfix.20200714.2
+    1.17.9-hotfix.20200824.1
+    1.17.11-hotfix.20200901
+    1.18.4-hotfix.20200626.1
+    1.18.8
+    1.19.0
+    "
+    for KUBERNETES_VERSION in ${PATCHED_HYPERKUBE_IMAGES}; do
+        # TODO: after CCP chart is done, change below to get hyperkube only for versions less than 1.17 only
+        if (($(echo ${KUBERNETES_VERSION} | cut -d"." -f2) < 19)); then
+            CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/hyperkube:v${KUBERNETES_VERSION}"
+            pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
+            echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
+            if [[ ${cliTool} == "docker" ]]; then
+                docker run --rm --entrypoint "" ${CONTAINER_IMAGE}  /bin/sh -c "iptables --version" | grep -v nf_tables && echo "Hyperkube contains no nf_tables"
+            else 
+                ctr --namespace k8s.io run --rm ${CONTAINER_IMAGE} checkTask /bin/sh -c "iptables --version" | grep -v nf_tables && echo "Hyperkube contains no nf_tables"
+            fi
+            # shellcheck disable=SC2181
+            if [[ $? != 0 ]]; then
+            echo "Hyperkube contains nf_tables, exiting..."
+            exit 99
+            fi
+        fi
+
+        # from 1.17 onwards start using kube-proxy as well
+        # strip the last .1 as that is for base image patch for hyperkube
+        if (($(echo ${KUBERNETES_VERSION} | cut -d"." -f2) >= 17)); then
+            if grep -iq hotfix <<< ${KUBERNETES_VERSION}; then
+            KUBERNETES_VERSION=`echo ${KUBERNETES_VERSION} | cut -d"." -f1,2,3,4`;
+            else
+            KUBERNETES_VERSION=`echo ${KUBERNETES_VERSION} | cut -d"." -f1,2,3`;
+            fi
+            CONTAINER_IMAGE="mcr.microsoft.com/oss/kubernetes/kube-proxy:v${KUBERNETES_VERSION}"
+            pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
+            if [[ ${cliTool} == "docker" ]]; then
+                docker run --rm --entrypoint "" ${CONTAINER_IMAGE}  /bin/sh -c "iptables --version" | grep -v nf_tables && echo "kube-proxy contains no nf_tables"
+            else
+                ctr --namespace k8s.io run --rm ${CONTAINER_IMAGE} checkTask/bin/sh -c "iptables --version" | grep -v nf_tables && echo "kube-proxy contains no nf_tables"
+            fi
+            # shellcheck disable=SC2181
+            if [[ $? != 0 ]]; then
+            echo "Hyperkube contains nf_tables, exiting..."
+            exit 99
+            fi
+            echo "  - ${CONTAINER_IMAGE}" >>${VHD_LOGS_FILEPATH}
+        fi
+    done
+}
 
 pullAddonImages() {
     runtime=$1
@@ -414,4 +508,17 @@ pullAddonImages() {
     pullContainerImage ${cliTool} ${CONTAINER_IMAGE}
     echo "  - ${CONTAINER_IMAGE}" >> ${VHD_LOGS_FILEPATH}
     done
+}
+
+# make sure we have a containerd process up and running during vhd building
+# returns pid of the bg containerd process (if started)
+startContainerd() {
+    if [[ ! -S "/var/run/containerd/containerd.sock" ]]; then
+        containerd &>/dev/null &
+        containerdPID=$!
+        echo "Started a bg containerd process. PID=${containerdPID}" >> ${VHD_LOGS_FILEPATH}
+        echo containerdPID
+    else 
+        echo ""
+    fi 
 }

@@ -1578,30 +1578,34 @@ extractKubeBinaries() {
 
 extractHyperkube() {
     CLI_TOOL=$1
-    path="/home/hyperkube-downloads/${KUBERNETES_VERSION}"
-    pullContainerImage $CLI_TOOL ${HYPERKUBE_URL}
-    if [[ "$CLI_TOOL" == "docker" ]]; then
-        mkdir -p "$path"
-        # Check if we can extract kubelet and kubectl directly from hyperkube's binary folder
-        if docker run --rm --entrypoint "" -v $path:$path ${HYPERKUBE_URL} /bin/bash -c "cp /usr/local/bin/{kubelet,kubectl} $path"; then
-            mv "$path/kubelet" "/usr/local/bin/kubelet-${KUBERNETES_VERSION}"
-            mv "$path/kubectl" "/usr/local/bin/kubectl-${KUBERNETES_VERSION}"
-            return
-        else
-            docker run --rm -v $path:$path ${HYPERKUBE_URL} /bin/bash -c "cp /hyperkube $path"
-        fi
-    else
-        img unpack -o "$path" ${HYPERKUBE_URL}
+    if [[ ${CLI_TOOL} == "containerd" ]]; then
+        CLI_TOOL="ctr"
     fi
 
-    if [[ $OS == $COREOS_OS_NAME ]]; then
-        cp "$path/hyperkube" "/opt/kubelet"
-        mv "$path/hyperkube" "/opt/kubectl"
-        chmod a+x /opt/kubelet /opt/kubectl
-    else
-        cp "$path/hyperkube" "/usr/local/bin/kubelet-${KUBERNETES_VERSION}"
-        mv "$path/hyperkube" "/usr/local/bin/kubectl-${KUBERNETES_VERSION}"
+    path="/home/hyperkube-downloads/${KUBERNETES_VERSION}"
+    pullContainerImage $CLI_TOOL ${HYPERKUBE_URL}
+    mkdir -p "$path"
+
+    if [[ "$CLI_TOOL" == "ctr" ]]; then    
+        extractCmd='ctr --namespace k8s.io run --rm --mount type=bind,src=$path,dst=$path,options=bind:rw ${HYPERKUBE_URL} extractTask /bin/bash -c "cp /usr/local/bin/{kubelet,kubectl} $path"'
+    else 
+        extractCmd='docker run --rm --entrypoint "" -v $path:$path ${HYPERKUBE_URL} /bin/bash -c "cp /usr/local/bin/{kubelet,kubectl} $path"'
     fi
+
+    # Check if we can extract kubelet and kubectl directly from hyperkube's binary folder
+    if eval ${extractCmd}; then
+        mv "$path/kubelet" "/usr/local/bin/kubelet-${KUBERNETES_VERSION}"
+        mv "$path/kubectl" "/usr/local/bin/kubectl-${KUBERNETES_VERSION}"
+    else
+        if [[ "$CLI_TOOL" == "ctr" ]]; then
+            ctr --namespace k8s.io run --rm --mount type=bind,src=$path,dst=$path,options=bind:rw ${HYPERKUBE_URL} extractTask /bin/bash -c "cp /hyperkube $path"
+        else 
+            docker run --rm -v $path:$path ${HYPERKUBE_URL} /bin/bash -c "cp /hyperkube $path"
+        fi
+    fi
+
+    cp "$path/hyperkube" "/usr/local/bin/kubelet-${KUBERNETES_VERSION}"
+    mv "$path/hyperkube" "/usr/local/bin/kubectl-${KUBERNETES_VERSION}"    
 }
 
 installKubeletKubectlAndKubeProxy() {
@@ -1613,8 +1617,7 @@ installKubeletKubectlAndKubeProxy() {
             if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
                 extractHyperkube "docker"
             else
-                installImg
-                extractHyperkube "img"
+                extractHyperkube "container"
             fi
         fi
     fi
@@ -1626,7 +1629,7 @@ installKubeletKubectlAndKubeProxy() {
 
     if [ -n "${KUBEPROXY_URL}" ]; then
         #kubeproxy is a system addon that is dictated by control plane so it shouldn't block node provisioning
-        pullContainerImage "docker" ${KUBEPROXY_URL} &
+        pullContainerImage ${CLI_TOOL} ${KUBEPROXY_URL} &
     fi
 }
 
@@ -1636,7 +1639,17 @@ pullContainerImage() {
     if [[ ${CLI_TOOL} == "ctr" ]]; then
         retrycmd_if_failure 60 1 1200 ctr --namespace k8s.io image pull $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
     else
-        retrycmd_if_failure 60 1 1200 $CLI_TOOL pull $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
+        retrycmd_if_failure 60 1 1200 docker pull $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
+    fi
+}
+
+removeContainerImage() {
+    CLI_TOOL=$1
+    CONTAINER_IMAGE_URL=$2
+    if [[ ${CLI_TOOL} == "ctr" ]]; then
+        retrycmd_if_failure 60 1 1200 ctr --namespace k8s.io image rm $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
+    else
+        retrycmd_if_failure 60 1 1200 docker rm $CONTAINER_IMAGE_URL || exit $ERR_CONTAINER_IMG_PULL_TIMEOUT
     fi
 }
 
@@ -1675,6 +1688,10 @@ cleanUpKubeProxyImages() {
     echo $(date),$(hostname), startCleanUpKubeProxyImages
     {{if NeedsContainerd}}
     function cleanUpHyperkubeImagesRun() {
+        if [[ ! -s /var/run/containerd/containerd.sock ]]; then
+            echo "cleanUpHyperkubeImagesRun: containerd not running, exiting early" 
+            exit
+        fi
         images_to_delete=$(ctr --namespace k8s.io images list | grep -vE "${KUBERNETES_VERSION}$|${KUBERNETES_VERSION}.[0-9]+$|${KUBERNETES_VERSION}-|${KUBERNETES_VERSION}_" | grep 'kube-proxy' | awk '{print $1}')
         local exit_code=$?
         if [[ $exit_code != 0 ]]; then
@@ -1688,6 +1705,10 @@ cleanUpKubeProxyImages() {
     }
     {{else}}
     function cleanUpHyperkubeImagesRun() {
+        if [[ ! -s /var/run/docker.sock ]]; then
+            echo "cleanUpHyperkubeImagesRun: docker not running, exiting early"
+            exit
+        fi
         images_to_delete=$(docker images --format '{{OpenBraces}}.Repository{{CloseBraces}}:{{OpenBraces}}.Tag{{CloseBraces}}' | grep -vE "${KUBERNETES_VERSION}$|${KUBERNETES_VERSION}.[0-9]+$|${KUBERNETES_VERSION}-|${KUBERNETES_VERSION}_" | grep 'kube-proxy')
         local exit_code=$?
         if [[ $exit_code != 0 ]]; then
@@ -1711,7 +1732,6 @@ cleanUpContainerImages() {
     export KUBERNETES_VERSION
     bash -c cleanUpHyperkubeImages &
     bash -c cleanUpKubeProxyImages &
-    # note: ubuntu18.04 VHDs will have both docker and containerd images pre-pulled. if provisioned runtime is containerd, we will simply remove docker root and vice versa.
     {{if NeedsContainerd}}
         export -f clearDockerRootDir
         cleanDockerRootDir &
@@ -2205,14 +2225,27 @@ var _linuxCloudInitArtifactsHealthMonitorSh = []byte(`#!/usr/bin/env bash
 set -o nounset
 set -o pipefail
 
+# node could very well be running both dockerd and containerd. we just care about the runtime that kubelet is using.
+getKubeletRuntime() {
+  kubeletArgs=$(systemctl show kubelet | grep 'ExecStart=')
+  runtimeArg=$(echo ${kubeletArgs##*--container-runtime-endpoint=} | cut -f1 -d" ")
+  if [[ "${runtimeArg}" == *containerd.sock ]]; then
+    echo "containerd"
+  else 
+    echo "docker"
+  fi
+}
+
 container_runtime_monitoring() {
   local -r max_attempts=5
   local attempt=1
   local -r crictl="${KUBE_HOME}/bin/crictl"
-  local -r container_runtime_name="${CONTAINER_RUNTIME_NAME:-docker}"
-  local healthcheck_command="docker ps"
-  if [[ "${CONTAINER_RUNTIME:-docker}" != "docker" ]]; then
-    healthcheck_command="${crictl} pods"
+  local -r container_runtime_name="$(getKubeletRuntime)"
+
+  if [[ ${container_runtime_name} == "containerd" ]]; then
+    local healthcheck_command="cri --namespace k8s.io container list"
+  else 
+    local healthcheck_command="docker ps"
   fi
 
   until timeout 60 ${healthcheck_command} > /dev/null; do
@@ -2226,8 +2259,10 @@ container_runtime_monitoring() {
   while true; do
     if ! timeout 60 ${healthcheck_command} > /dev/null; then
       echo "Container runtime ${container_runtime_name} failed!"
-      if [[ "$container_runtime_name" == "docker" ]]; then
-          pkill -SIGUSR1 dockerd
+      if [[ "$container_runtime_name" == "containerd" ]]; then
+        pkill -SIGUSR1 containerd
+      else 
+        pkill -SIGUSR1 dockerd
       fi
       systemctl kill --kill-who=main "${container_runtime_name}"
       sleep 120
@@ -3540,6 +3575,8 @@ write_files:
     ExecStart=
     ExecStart=/usr/bin/dockerd -H fd:// --storage-driver=overlay2 --bip={{GetParameter "dockerBridgeCidr"}}
     ExecStartPost=/sbin/iptables -P FORWARD ACCEPT
+    LimitNPROC=infinity
+    LimitCORE=infinity
     #EOF
 
 - path: /etc/docker/daemon.json
