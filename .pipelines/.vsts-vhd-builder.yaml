@@ -19,7 +19,7 @@ phases:
       - bash: |
           ASC_BASELINE_TMP=vhdbuilder/packer/asc-baseline-1.0.0-master.354.amd64.deb
           sudo dpkg -i $ASC_BASELINE_TMP
-          cd /opt/
+          cp /opt/microsoft/asc-baseline/baselines/oms_audits.xml /opt/microsoft/asc-baseline/oms_audits.xml
           pwd
           ls -R
         displayName: show Directory
