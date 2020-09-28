@@ -68,11 +68,19 @@ Set-AzureCNIConfig
         $KubeServiceCIDR,
         [Parameter(Mandatory=$true)][string]
         $VNetCIDR,
-        [Parameter(Mandatory=$true)][string]
-        $TargetEnvironment
+        [Parameter(Mandatory=$true)][bool]
+        $IsAzureStack,
+        [Parameter(Mandatory=$true)][bool]
+        $IsDualStackEnabled
     )
     # Fill in DNS information for kubernetes.
-    $exceptionAddresses = @($KubeClusterCIDR, $MasterSubnet, $VNetCIDR)
+    if ($IsDualStackEnabled){
+        $subnetToPass = $KubeClusterCIDR -split ","
+        $exceptionAddresses = @($subnetToPass[0], $MasterSubnet, $VNetCIDR)
+    }
+    else {
+        $exceptionAddresses = @($KubeClusterCIDR, $MasterSubnet, $VNetCIDR)
+    }
 
     $fileName  = [Io.path]::Combine("$AzureCNIConfDir", "10-azure.conflist")
     $configJson = Get-Content $fileName | ConvertFrom-Json
@@ -93,9 +101,27 @@ Set-AzureCNIConfig
         $configJson.plugins.AdditionalArgs[0].Value.ExceptionList = $exceptionAddresses
     }
 
-    $configJson.plugins.AdditionalArgs[1].Value.DestinationPrefix  = $KubeServiceCIDR
+    if ($IsDualStackEnabled){
+        $configJson.plugins[0]|Add-Member -Name "ipv6Mode" -Value "ipv6nat" -MemberType NoteProperty
+        $serviceCidr = $KubeServiceCIDR -split ","
+        $configJson.plugins[0].AdditionalArgs[1].Value.DestinationPrefix = $serviceCidr[0]
+        $valueObj = [PSCustomObject]@{
+            Type = 'ROUTE'
+            DestinationPrefix = $serviceCidr[1]
+            NeedEncap = $True
+        }
 
-    if ($TargetEnvironment -ieq "AzureStackCloud") {
+        $jsonContent = [PSCustomObject]@{
+            Name = 'EndpointPolicy'
+            Value = $valueObj
+        }
+        $configJson.plugins[0].AdditionalArgs += $jsonContent
+    }
+    else {
+        $configJson.plugins[0].AdditionalArgs[1].Value.DestinationPrefix = $KubeServiceCIDR
+    }
+
+    if ($IsAzureStack) {
         Add-Member -InputObject $configJson.plugins[0].ipam -MemberType NoteProperty -Name "environment" -Value "mas"
     }
 
@@ -255,3 +281,49 @@ function GenerateAzureStackCNIConfig
     Set-ItemProperty -Path $azureCNIConfigFile -Name IsReadOnly -Value $true
 }
 
+function New-ExternalHnsNetwork
+{
+    param (
+        [Parameter(Mandatory=$true)][bool]
+        $IsDualStackEnabled
+    )
+
+    Write-Log "Creating new HNS network `"ext`""
+    $externalNetwork = "ext"
+    $na = @(Get-NetAdapter -Physical)
+
+    if ($na.Count -eq 0) {
+        throw "Failed to find any physical network adapters"
+    }
+
+    # If there is more than one adapter, use the first adapter.
+    $managementIP = (Get-NetIPAddress -ifIndex $na[0].ifIndex -AddressFamily IPv4).IPAddress
+    $adapterName = $na[0].Name
+    Write-Log "Using adapter $adapterName with IP address $managementIP"
+    $mgmtIPAfterNetworkCreate
+
+    $stopWatch = New-Object System.Diagnostics.Stopwatch
+    $stopWatch.Start()
+
+    # Fixme : use a smallest range possible, that will not collide with any pod space
+    if ($IsDualStackEnabled) {
+        New-HNSNetwork -Type $global:NetworkMode -AddressPrefix @("192.168.255.0/30","192:168:255::0/127") -Gateway @("192.168.255.1","192:168:255::1") -AdapterName $adapterName -Name $externalNetwork -Verbose
+    }
+    else {
+        New-HNSNetwork -Type $global:NetworkMode -AddressPrefix "192.168.255.0/30" -Gateway "192.168.255.1" -AdapterName $adapterName -Name $externalNetwork -Verbose
+    }
+    # Wait for the switch to be created and the ip address to be assigned.
+    for ($i = 0; $i -lt 60; $i++) {
+        $mgmtIPAfterNetworkCreate = Get-NetIPAddress $managementIP -ErrorAction SilentlyContinue
+        if ($mgmtIPAfterNetworkCreate) {
+            break
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    $stopWatch.Stop()
+    if (-not $mgmtIPAfterNetworkCreate) {
+        throw "Failed to find $managementIP after creating $externalNetwork network"
+    }
+    Write-Log "It took $($StopWatch.Elapsed.Seconds) seconds to create the $externalNetwork network."
+}
