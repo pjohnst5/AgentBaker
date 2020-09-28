@@ -19,6 +19,7 @@ phases:
       - bash: |
           ASC_BASELINE_TMP=vhdbuilder/packer/asc-baseline-1.0.0-master.354.amd64.deb
           dpkg -i $ASC_BASELINE_TMP
+          cd /opt/
           pwd
           ls -R
         displayName: show Directory
