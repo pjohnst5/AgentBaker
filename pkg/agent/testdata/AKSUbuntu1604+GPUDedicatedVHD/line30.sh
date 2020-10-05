@@ -190,8 +190,8 @@ ensureContainerRuntime() {
         ensureDocker
     fi
     
+    ensureMonitorService
 }
-
 
 
 ensureDocker() {
@@ -215,6 +215,10 @@ ensureDocker() {
     done
     systemctl is-active --quiet containerd && (systemctl_disable 20 30 120 containerd || exit $ERR_SYSTEMD_CONTAINERD_STOP_FAIL)
     systemctlEnableAndStart docker || exit $ERR_DOCKER_START_FAIL
+
+}
+
+ensureMonitorService() {
     
     DOCKER_MONITOR_SYSTEMD_TIMER_FILE=/etc/systemd/system/docker-monitor.timer
     wait_for_file 1200 1 $DOCKER_MONITOR_SYSTEMD_TIMER_FILE || exit $ERR_FILE_WATCH_TIMEOUT
@@ -222,7 +226,6 @@ ensureDocker() {
     wait_for_file 1200 1 $DOCKER_MONITOR_SYSTEMD_FILE || exit $ERR_FILE_WATCH_TIMEOUT
     systemctlEnableAndStart docker-monitor.timer || exit $ERR_SYSTEMCTL_START_FAIL
 }
-
 
 
 
