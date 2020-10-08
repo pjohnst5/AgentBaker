@@ -3703,12 +3703,6 @@ write_files:
     {{end}}
     [metrics]
     address = "127.0.0.1:10257"
-    {{if HasPrivateAzureRegistryServer}}
-    [plugins.cri.registry.auths]
-      [plugins.cri.registry.auths."{{GetPrivateAzureRegistryServer}}"]
-        username = {{GetParameter "servicePrincipalClientId"}}
-        password = {{GetParameter "servicePrincipalClientSecret"}}
-    {{end}}
     #EOF
 
 - path: /etc/containerd/kubenet_template.conf

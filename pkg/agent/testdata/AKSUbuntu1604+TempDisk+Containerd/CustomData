@@ -85,7 +85,6 @@ write_files:
     
     [metrics]
     address = "127.0.0.1:10257"
-    
     #EOF
 
 - path: /etc/containerd/kubenet_template.conf

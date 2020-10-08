@@ -84,12 +84,6 @@ write_files:
     
     [metrics]
     address = "127.0.0.1:10257"
-    
-    [plugins.cri.registry.auths]
-      [plugins.cri.registry.auths."acr.io/privateacr"]
-        username = clientID
-        password = clientSecret
-    
     #EOF
 
 - path: /etc/containerd/kubenet_template.conf
